@@ -5,11 +5,14 @@ require 'stringio'
 provider = Puppet::Type.type(:package).provider(:chocolatey)
 
 describe provider do
+
+  let (:chocolatey) {'c:\blah\chocolatey.cmd'}
+
   before(:each) do
     ENV['ChocolateyInstall'] = 'c:\blah'
 
     @resource = Puppet::Type.type(:package).new(
-      :name     => "chocolatey",
+      :name     => 'chocolatey',
       :ensure   => :present,
       :provider => :chocolatey
     )
@@ -35,10 +38,30 @@ describe provider do
     @provider.should respond_to(:latest)
   end
 
+  context "parameter :source" do
+    it "should default to nil" do
+      @resource[:source].should be_nil
+    end
+
+    it "should accept c:\\packages" do
+      @resource[:source] = 'c:\packages'
+    end
+
+    it "should accept http://somelocation/packages" do
+      @resource[:source] = 'http://somelocation/packages'
+    end
+  end
+
   describe "when installing" do
     it "should use a command without versioned package" do
       @resource[:ensure] = :latest
       @provider.expects(:chocolatey).with('install', 'chocolatey', nil)
+      @provider.install
+    end
+
+    it "should use source if it is specified" do
+      @resource[:source] = 'c:\packages'
+      @provider.expects(:chocolatey).with('install','chocolatey', nil, '-source', 'c:\packages')
       @provider.install
     end
   end
@@ -55,12 +78,11 @@ describe provider do
       @provider.expects(:chocolatey).with('update', 'chocolatey', nil)
       @provider.update
     end
-  end
 
-  describe "when uninstalling" do
-    it "should call the remove operation" do
-      @provider.expects(:chocolatey).with('uninstall', 'chocolatey', nil)
-      @provider.uninstall
+    it "should use source if it is specified" do
+      @resource[:source] = 'c:\packages'
+      @provider.expects(:chocolatey).with('update','chocolatey', nil, '-source', 'c:\packages')
+      @provider.update
     end
   end
 
@@ -93,13 +115,14 @@ describe provider do
 
     it "should query chocolatey" do
       provider.expects(:execpipe).with() do |args|
-        args[1] =~ /version all -lo.*\.Found/
+        args[1] =~ /list/
+        args[2] =~ /-lo/
       end
       provider.instances
     end
 
     it "should return installed packages with their versions" do
-      provider.expects(:execpipe).yields(StringIO.new(%Q(package1==1.23\n\package2==2.00\n)))
+      provider.expects(:execpipe).yields(StringIO.new(%Q(package1 1.23\n\package2 2.00\n)))
       packages = (provider.instances)
 
       packages.length.should == 2
@@ -122,10 +145,5 @@ describe provider do
       provider.instances.should be_nil
     end
 
-    it "should warn on invalid input" do
-      provider.expects(:execpipe).yields(StringIO.new("blah"))
-      provider.expects(:warning).with("Failed to match line blah")
-      provider.instances.should == []
-    end
   end
 end
